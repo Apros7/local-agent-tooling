@@ -1,0 +1,132 @@
+#!/usr/bin/env bash
+# Shared post-commit hook. Not active until each clone opts in once:
+#   git config core.hooksPath .githooks
+#
+# When the commit that was just made contains the keyword below, analyzes
+# this branch's code changes against its docs changes (same idea as
+# .github/workflows/docs-check.yml) and creates a small follow-up commit
+# containing just the report - so it travels with the branch for a
+# reviewer to see, alongside (not inside) the commit that triggered it.
+#
+# commit-msg hooks run too early to stage files into the commit being
+# made (git has already decided its tree by then) - post-commit, with a
+# follow-up commit, is the reliable way to get a generated file into the
+# branch's history. The follow-up commit's own message never contains
+# the keyword, which is what stops this hook from re-triggering itself.
+#
+# Never blocks anything - post-commit can't reject a commit anyway, and
+# any failure here (missing CLI, no network, no auth) just reports to
+# stderr and exits 0.
+
+KEYWORD="#docscheck"
+
+git log -1 --format=%B | grep -qF "$KEYWORD" || exit 0
+
+echo "docs-check: '$KEYWORD' found in last commit, analyzing..." >&2
+
+# SmartGit (and some other GUI git clients) don't inherit your shell's
+# PATH, so tools installed via mise/npm/homebrew/etc. may be invisible
+# here even though they work from a terminal. Add common install dirs.
+for dir in "$HOME/.local/share/mise/shims" "$HOME/.npm-global/bin" "$HOME/.npm/bin" /usr/local/bin /opt/homebrew/bin; do
+  [[ -d "$dir" ]] && PATH="$dir:$PATH"
+done
+export PATH
+
+if ! command -v copilot >/dev/null 2>&1; then
+  echo "docs-check: 'copilot' CLI not found on PATH - skipping." >&2
+  exit 0
+fi
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+CONFIG_FILE="$REPO_ROOT/tooling.conf"
+REPORT="$REPO_ROOT/.docs-check-report.md"
+GIT=(git -C "$REPO_ROOT")
+TRIGGER_SHA="$("${GIT[@]}" rev-parse --short HEAD)"
+
+resolve_base() {
+  if [[ -f "$CONFIG_FILE" ]]; then
+    local configured
+    configured="$(grep -E '^base_branch=' "$CONFIG_FILE" | tail -1 | cut -d= -f2-)"
+    if [[ -n "$configured" ]]; then echo "$configured"; return; fi
+  fi
+  local remote_head
+  remote_head="$("${GIT[@]}" symbolic-ref -q refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/@@')"
+  if [[ -n "$remote_head" ]]; then echo "$remote_head"; return; fi
+  echo "origin/main"
+}
+
+resolve_docs_dir() {
+  if [[ -f "$CONFIG_FILE" ]]; then
+    local configured
+    configured="$(grep -E '^docs_dir=' "$CONFIG_FILE" | tail -1 | cut -d= -f2-)"
+    if [[ -n "$configured" ]]; then echo "$configured"; return; fi
+  fi
+  echo "docs"
+}
+
+"${GIT[@]}" fetch origin >/dev/null 2>&1 || echo "docs-check: 'git fetch origin' failed, using local refs." >&2
+
+BASE="$(resolve_base)"
+DOCS_DIR="$(resolve_docs_dir)"
+
+if ! "${GIT[@]}" rev-parse --verify --quiet "$BASE" >/dev/null; then
+  echo "docs-check: base branch '$BASE' not found - skipping." >&2
+  exit 0
+fi
+
+CODE_DIFF="$("${GIT[@]}" diff "$BASE"...HEAD -- . ":(exclude)$DOCS_DIR/**")"
+DOCS_DIFF="$("${GIT[@]}" diff "$BASE"...HEAD -- "$DOCS_DIR/")"
+
+if [[ -z "$CODE_DIFF" ]]; then
+  echo "docs-check: no code changes against $BASE outside $DOCS_DIR - skipping." >&2
+  exit 0
+fi
+
+RAW_RESULT="$(copilot -p "You are checking a branch's commits before it becomes a PR.
+The first diff below is the code changes (against $BASE, excluding $DOCS_DIR).
+The second is the changes already made under $DOCS_DIR.
+
+Compare them and list any issues:
+- code behaviour changed but the docs were not updated
+- docs describe something that doesn't match the code change
+- renamed/removed params, endpoints, config keys still referenced in $DOCS_DIR
+
+Be concise. Output plain markdown prose only - no XML tags, tool citations, or
+file:line references. If there are no issues, say exactly: No documentation issues found.
+Do not modify any files.
+
+--- code diff ---
+$CODE_DIFF
+
+--- docs diff ($DOCS_DIR) ---
+$DOCS_DIFF" \
+  --deny-tool 'shell' \
+  --deny-tool 'write' \
+  --deny-tool 'url' \
+  --no-color \
+  -s 2>&1)"
+
+RESULT="$(python3 -c "
+import re, sys
+t = sys.stdin.read()
+t = re.sub(r'<final_answer>.*?</final_answer>', '', t, flags=re.S).strip()
+print(t or 'No documentation issues found.')
+" <<< "$RAW_RESULT")"
+
+{
+  echo "# Docs consistency check"
+  echo
+  echo "Triggered by \`$KEYWORD\` in commit $TRIGGER_SHA, against \`$BASE\`."
+  echo
+  echo "$RESULT"
+} > "$REPORT"
+
+"${GIT[@]}" add "$REPORT"
+if "${GIT[@]}" diff --cached --quiet; then
+  echo "docs-check: report unchanged, nothing to commit." >&2
+  exit 0
+fi
+
+"${GIT[@]}" commit -m "docs-check: report for $TRIGGER_SHA" >/dev/null
+echo "docs-check: committed $REPORT" >&2
+exit 0

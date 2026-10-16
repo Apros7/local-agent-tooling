@@ -69,6 +69,39 @@ Copilot seat and can't authenticate Copilot CLI:
 2. Save it as a repository secret named `COPILOT_GITHUB_TOKEN`
    (Settings -> Secrets and variables -> Actions).
 
+## Local docs-check on commit (`#docscheck`)
+
+`.githooks/post-commit` does the same comparison as the GitHub check, but locally
+and on demand: when a commit's message contains `#docscheck`, it diffs that commit's
+branch against `tooling.conf`'s `base_branch`, asks Copilot CLI to compare the code
+and docs changes, and creates a **separate follow-up commit** containing just
+`.docs-check-report.md` - so it rides along in the branch for a reviewer to see.
+Commits without the keyword are untouched; nothing here ever blocks a commit.
+
+It has to work this way rather than rejecting bad commits, because of how git hook
+timing actually works: a `commit-msg` hook can read the message but by the time it
+runs, git has already fixed what tree the commit will contain, so files staged
+from inside it land in the *next* commit, not the current one. `post-commit` runs
+after the commit exists, so creating a small follow-up commit is the reliable way
+to get a generated file into the branch's history (same reason the follow-up
+commit's message never itself contains `#docscheck` - that's what stops it
+re-triggering itself, not anything forced).
+
+Works with any Git client, SmartGit included - hooks are a Git feature, not a
+client one. One real SmartGit-specific gotcha: it doesn't inherit your shell's
+PATH, so tools installed via mise/npm/homebrew may be invisible to the hook even
+though they work from a terminal; the hook adds common install dirs to `PATH`
+itself to work around this, but if `copilot` lives somewhere unusual, it'll log
+"not found on PATH" to stderr and skip, rather than fail the commit.
+
+Hooks aren't distributed by cloning a repo (git won't auto-run a cloned repo's
+hooks for security reasons), so each person who wants this needs a one-time,
+per-clone opt-in:
+
+```
+git config core.hooksPath .githooks
+```
+
 ## tinygrad demo
 
 `tinygrad/` vendors a snapshot of [tinygrad/tinygrad](https://github.com/tinygrad/tinygrad) (commit `b5be082207835b2d82b23e3c9ed2c5415d8b1671`, MIT licensed, see `tinygrad/LICENSE`) as a real-world target to demo the scripts against.
