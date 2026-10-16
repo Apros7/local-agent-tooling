@@ -5,8 +5,8 @@ Scripts that keep `docs/` in sync with your code, run right before you open a PR
 ## gen-docs scripts
 
 ```
-./scripts/gen-docs-claude.sh [base-branch]
-./scripts/gen-docs-copilot.sh [base-branch]
+./scripts/gen-docs-claude.sh [--check] [base-branch]
+./scripts/gen-docs-copilot.sh [--check] [base-branch]
 ```
 
 What happens:
@@ -17,6 +17,10 @@ What happens:
 4. Commits the result, if anything changed
 
 Each script is self-contained - copy either one into any repo and it works with no setup.
+
+**`--check`**: reports whether docs look stale instead of updating them. Read-only -
+no edits, no commit - and exits `1` if something looks out of date, so it works as
+a CI gate (see below).
 
 ## tooling.conf
 
@@ -48,6 +52,22 @@ curl -fsSL https://gh.io/copilot-install | bash   # install script, macOS/Linux
 ```
 
 Then authenticate once with `copilot login`. An "Access denied by policy settings" error usually means an org admin has disabled Copilot CLI specifically, or your plan doesn't include CLI access - check <https://github.com/settings/copilot>; logging in again won't fix either case.
+
+## Automated docs-check on GitHub
+
+`.github/workflows/docs-check.yml` runs on every PR once it's open and not a draft.
+It builds two diffs against the PR's base (`code.diff` excluding `docs_dir`,
+`docs.diff` for just `docs_dir`), asks Copilot CLI to compare them, and leaves the
+result as a PR comment. Never edits or commits anything itself.
+
+One-time setup, since the default `GITHUB_TOKEN` Actions provides isn't tied to a
+Copilot seat and can't authenticate Copilot CLI:
+
+1. From a GitHub account with an active Copilot subscription, create a
+   fine-grained personal access token with the "Copilot Requests" permission
+   (classic `ghp_` tokens aren't accepted).
+2. Save it as a repository secret named `COPILOT_GITHUB_TOKEN`
+   (Settings -> Secrets and variables -> Actions).
 
 ## tinygrad demo
 

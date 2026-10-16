@@ -1,0 +1,4 @@
+# Generated locally when testing .github/workflows/docs-check.yml by hand.
+/code.diff
+/docs.diff
+/result.md

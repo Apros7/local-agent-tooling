@@ -1,10 +1,14 @@
 #!/usr/bin/env bash
 # Regenerate docs for the current branch with Claude Code, then commit them.
-# Usage: ./scripts/gen-docs-claude.sh [base-branch]
+# Usage: ./scripts/gen-docs-claude.sh [--check] [base-branch]
+#
+#   --check   Report whether docs look stale instead of updating them.
+#             Read-only: no edits, no commit. Exits 1 if docs look stale,
+#             so this can be used as a CI gate.
 #
 # "base-branch" is whatever you'll eventually open the PR against - it has
 # nothing to do with which branch you're currently on. Resolution order:
-#   1. $1, if given
+#   1. [base-branch] argument, if given
 #   2. base_branch=... in tooling.conf at the repo root
 #   3. the remote's default branch (git origin/HEAD)
 #   4. origin/main
@@ -15,6 +19,15 @@
 # -C, so this works the same regardless of which directory you invoke it
 # from.
 set -euo pipefail
+
+CHECK=0
+ARG=""
+for a in "$@"; do
+  case "$a" in
+    --check) CHECK=1 ;;
+    *) ARG="$a" ;;
+  esac
+done
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 CONFIG_FILE="$REPO_ROOT/tooling.conf"
@@ -37,7 +50,7 @@ resolve_base() {
   if [[ -n "$remote_head" ]]; then echo "$remote_head"; return; fi
   echo "origin/main"
 }
-BASE="$(resolve_base "${1:-}")"
+BASE="$(resolve_base "$ARG")"
 
 resolve_docs_dir() {
   if [[ -f "$CONFIG_FILE" ]]; then
@@ -61,6 +74,32 @@ if ! "${GIT[@]}" rev-parse --verify --quiet "$BASE:$DOCS_DIR" >/dev/null; then
   exit 1
 fi
 echo "Base branch: $BASE, docs dir: $DOCS_DIR"
+
+if [[ "$CHECK" -eq 1 ]]; then
+  # Read-only: ask Claude to report stale docs without touching anything.
+  REPORT="$("${GIT[@]}" diff "$BASE"...HEAD -- . ":!$DOCS_DIR" | claude -p "
+The piped input is the full code diff for the current branch against $BASE.
+If CLAUDE.md or AGENTS.md defines a code-to-docs map, use it. Otherwise infer
+which files under $DOCS_DIR cover the changed code by reading the diff and the
+existing docs structure.
+This is a read-only check - do not edit anything.
+List any files under $DOCS_DIR that are now stale, missing, or incomplete
+because of this diff, with a one-line reason each. If nothing needs changing,
+say so.
+End your response with exactly one line, and nothing after it:
+RESULT: STALE
+or
+RESULT: OK" \
+    --allowedTools "Read,Glob,Grep" \
+    --permission-mode acceptEdits)"
+  echo "$REPORT"
+  if echo "$REPORT" | grep -q '^RESULT: STALE$'; then
+    echo "Docs may be out of date - see report above." >&2
+    exit 1
+  fi
+  echo "Docs look up to date."
+  exit 0
+fi
 
 "${GIT[@]}" checkout "$BASE" -- "$DOCS_DIR"   # remove this line if you hand-write docs on branches
 
