@@ -5,19 +5,19 @@
 # "base-branch" is whatever you'll eventually open the PR against - it has
 # nothing to do with which branch you're currently on. Resolution order:
 #   1. $1, if given
-#   2. base_branch=... in .gen-docs.conf at the repo root
+#   2. base_branch=... in tooling.conf at the repo root
 #   3. the remote's default branch (git origin/HEAD)
 #   4. origin/main
 #
 # The docs directory defaults to "docs" at the repo root; override with
-# docs_dir=... in .gen-docs.conf (e.g. docs_dir=some/nested/docs) if yours
+# docs_dir=... in tooling.conf (e.g. docs_dir=some/nested/docs) if yours
 # lives elsewhere. All git commands below run rooted at the repo root via
 # -C, so this works the same regardless of which directory you invoke it
 # from.
 set -euo pipefail
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
-CONFIG_FILE="$REPO_ROOT/.gen-docs.conf"
+CONFIG_FILE="$REPO_ROOT/tooling.conf"
 GIT=(git -C "$REPO_ROOT")
 
 # Refuse to run with uncommitted work, so nothing gets lost
