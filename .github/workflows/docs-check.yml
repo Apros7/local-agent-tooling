@@ -57,13 +57,24 @@ jobs:
           - code behaviour changed but the docs were not updated
           - docs describe something that doesn't match the code change
           - renamed/removed params, endpoints, config keys still referenced in $DOCS_DIR
-          Be concise. Output markdown. If there are no issues, say 'No documentation issues found.'
+          Be concise. Output plain markdown prose only - no XML tags, tool citations, or
+          file:line references. If there are no issues, say exactly: No documentation issues found.
           Do not modify any files." \
             --deny-tool 'shell' \
             --deny-tool 'write' \
             --deny-tool 'url' \
             --no-color \
-            -s > result.md
+            -s > raw_result.md
+
+          # Copilot CLI occasionally wraps its answer in an internal
+          # <final_answer>...</final_answer> citation block that leaks into
+          # plain -s output - strip it so it never ends up in the PR comment.
+          python3 -c "
+          import re, pathlib
+          t = pathlib.Path('raw_result.md').read_text()
+          t = re.sub(r'<final_answer>.*?</final_answer>', '', t, flags=re.S).strip()
+          pathlib.Path('result.md').write_text((t or 'No documentation issues found.') + '\n')
+          "
 
       - name: Comment on PR
         env:
