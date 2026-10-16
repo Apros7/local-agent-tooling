@@ -1,0 +1,15 @@
+# Optional config for scripts/gen-docs-*.sh. Copy this file (along with
+# the script(s) you want) into any repo as .gen-docs.conf, no edits needed:
+# with everything commented out like this, both settings fall through to
+# auto-detection, which covers the common case (docs at the repo root,
+# a normal origin/HEAD default branch). Uncomment and edit only the lines
+# you actually need to override.
+
+# Base branch to diff against when no [base-branch] argument is given.
+# Default: auto-detected from the remote's origin/HEAD, falling back to
+# origin/main if that isn't set.
+# base_branch=origin/main
+
+# Where docs live, relative to the repo root.
+# Default: docs
+# docs_dir=docs

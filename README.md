@@ -13,15 +13,27 @@ the code changes - then commits the result if anything changed.
 ./scripts/gen-docs-copilot.sh [base-branch]
 ```
 
-The base branch is whatever you'll eventually open the PR against - unrelated to
-which branch you happen to be on. It's resolved in this order:
+### Using these in another repo
 
-1. `[base-branch]` argument, if given
-2. `base_branch=...` in `.gen-docs.conf` at the repo root
-3. the remote's default branch, auto-detected from `origin/HEAD`
-4. `origin/main`, as a last resort
+Both scripts are self-contained and have no dependency on anything else in this
+repo - copy whichever one(s) you want into `scripts/` (or anywhere) in any other
+project and it works as-is, no setup required. They each resolve the base branch
+and the docs directory the same way:
 
-This repo's own `.gen-docs.conf` sets `base_branch=origin/main` as a worked example.
+1. base branch: `[base-branch]` argument -> `base_branch=...` in `.gen-docs.conf`
+   at the repo root -> the remote's default branch, auto-detected from
+   `origin/HEAD` -> `origin/main` as a last resort
+2. docs dir: `docs_dir=...` in `.gen-docs.conf` -> `docs`, relative to the repo root
+
+`.gen-docs.conf` is entirely optional - most repos need neither setting (a normal
+`origin/HEAD` and a top-level `docs/` just work) and can skip it entirely. Copy
+`.gen-docs.conf.example` in as `.gen-docs.conf` only if you need to override one -
+every line in it starts commented out, so copying it as-is changes nothing.
+
+This repo is the one exception that actually needs an override: its docs live
+under the vendored `tinygrad/docs`, not at the top level, so its own `.gen-docs.conf`
+sets `docs_dir=tinygrad/docs`. That file is specific to this repo's layout - don't
+copy it elsewhere; copy `.gen-docs.conf.example` instead.
 
 ### Installing GitHub Copilot CLI
 
