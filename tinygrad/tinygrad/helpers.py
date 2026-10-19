@@ -469,7 +469,7 @@ def _ensure_downloads_dir() -> pathlib.Path:
   return pathlib.Path(cache_dir) / "downloads"
 
 def fetch(url:str, name:pathlib.Path|str|None=None, subdir:str|None=None, gunzip:bool=False, allow_caching=not getenv("DISABLE_HTTP_CACHE"),
-          headers:dict[str, str]={}, sha256:str|None=None, extract:bool=False) -> pathlib.Path:
+          headers:dict[str, str]={}, sha256:str|None=None, extract:bool=False, timeout:int=getenv("FETCH_TIMEOUT", 10)) -> pathlib.Path:
   import urllib.request
   if url.startswith(("/", ".")): return pathlib.Path(url)
   if name is not None and (isinstance(name, pathlib.Path) or '/' in name): fp = pathlib.Path(name)
@@ -480,7 +480,7 @@ def fetch(url:str, name:pathlib.Path|str|None=None, subdir:str|None=None, gunzip
   if not fp.is_file() or not allow_caching or (sha256 and hashlib.sha256(fp.read_bytes()).hexdigest() != sha256):
     if extract: shutil.rmtree(extract_dir, ignore_errors=True)
     (_dir := fp.parent).mkdir(parents=True, exist_ok=True)
-    with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "tinygrad 0.14.0", **headers}), timeout=10) as r:
+    with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "tinygrad 0.14.0", **headers}), timeout=timeout) as r:
       assert r.status in {200, 206}, r.status
       length = int(r.headers.get('content-length', 0)) if not gunzip else None
       readfile = gzip.GzipFile(fileobj=r) if gunzip else r
